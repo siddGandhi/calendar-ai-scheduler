@@ -1,7 +1,7 @@
 import os
 import json
 from datetime import datetime
-from flask import Flask, redirect, request, session, jsonify, render_template_string, url_for
+from flask import Flask, redirect, request, session, jsonify, render_template, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
@@ -14,14 +14,12 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-# Tell Flask it is behind a reverse proxy (Render) so https URLs resolve properly
+# Ensure HTTPS URLs resolve correctly behind Render reverse proxy
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
-# Initialize Gemini Client
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# OAuth Scopes
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
 def get_oauth_config():
@@ -35,20 +33,14 @@ def get_oauth_config():
 class CalendarEventSchema(BaseModel):
     summary: str
     description: str
-    start_iso: str
-    end_iso: str
+    start_iso: str  # Format: YYYY-MM-DDTHH:MM
+    end_iso: str    # Format: YYYY-MM-DDTHH:MM
 
 @app.route('/')
 def index():
     if 'credentials' not in session:
-        return '''
-        <div style="font-family:system-ui;text-align:center;margin-top:100px;">
-          <h2>Calendar AI Assistant</h2>
-          <p>Connect your account to start scheduling in plain text.</p>
-          <a href="/login"><button style="padding:12px 24px;font-size:16px;background:#2563eb;color:white;border:none;border-radius:6px;cursor:pointer;">Connect Google Calendar</button></a>
-        </div>
-        '''
-    return render_template_string(HTML_TEMPLATE)
+        return render_template('login.html')
+    return render_template('index.html')
 
 @app.route('/login')
 def login():
@@ -93,25 +85,28 @@ def oauth2callback():
         'client_secret': creds.client_secret,
         'scopes': creds.scopes
     }
-    return redirect('/')
+    return redirect(url_for('index'))
 
-@app.route('/schedule', methods=['POST'])
-def schedule():
+@app.route('/parse', methods=['POST'])
+def parse():
     if 'credentials' not in session:
         return jsonify({"error": "Not authenticated"}), 401
 
     data = request.get_json()
-    user_prompt = data.get('text', '')
+    user_prompt = data.get('text', '').strip()
     user_tz = data.get('timeZone', 'UTC')
     current_time = data.get('clientNow', datetime.now().isoformat())
 
+    if not user_prompt:
+        return jsonify({"error": "Empty prompt"}), 400
+
     system_instruction = f"""
-    You are an intelligent calendar scheduling assistant.
+    You are an intelligent calendar assistant.
     Current Reference Timestamp: {current_time}
     User Local Timezone: {user_tz}
-    Extract the event title, a short description, and start/end time.
-    Format dates as standard ISO-8601 strings (YYYY-MM-DDTHH:MM:SS) in the user's local timezone.
-    If end time is omitted, default duration is 1 hour.
+    Extract the event title, brief description, and start/end time.
+    Format ISO strings strictly as 'YYYY-MM-DDTHH:MM' in user's local timezone.
+    If duration is unspecified, assume 1 hour.
     """
 
     try:
@@ -126,105 +121,40 @@ def schedule():
             )
         )
         parsed = json.loads(response.text)
+        return jsonify(parsed)
     except Exception as e:
         return jsonify({"error": f"AI Parsing failed: {str(e)}"}), 500
+
+@app.route('/schedule', methods=['POST'])
+def schedule():
+    if 'credentials' not in session:
+        return jsonify({"error": "Not authenticated"}), 401
+
+    data = request.get_json()
+    summary = data.get('summary')
+    description = data.get('description', '')
+    start_iso = data.get('start_iso')
+    end_iso = data.get('end_iso')
+    user_tz = data.get('timeZone', 'UTC')
 
     creds = Credentials(**session['credentials'])
     service = build('calendar', 'v3', credentials=creds)
 
     body = {
-        'summary': parsed['summary'],
-        'description': parsed.get('description', ''),
-        'start': {'dateTime': parsed['start_iso'], 'timeZone': user_tz},
-        'end': {'dateTime': parsed['end_iso'], 'timeZone': user_tz},
+        'summary': summary,
+        'description': description,
+        'start': {'dateTime': f"{start_iso}:00" if len(start_iso) == 16 else start_iso, 'timeZone': user_tz},
+        'end': {'dateTime': f"{end_iso}:00" if len(end_iso) == 16 else end_iso, 'timeZone': user_tz},
     }
 
     try:
         created = service.events().insert(calendarId='primary', body=body).execute()
         return jsonify({
             "status": "success",
-            "summary": parsed['summary'],
-            "start": parsed['start_iso'],
-            "end": parsed['end_iso'],
             "link": created.get('htmlLink')
         })
     except Exception as e:
         return jsonify({"error": f"Google Calendar API Error: {str(e)}"}), 500
-
-HTML_TEMPLATE = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Quick Calendar AI</title>
-  <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 80px auto; padding: 0 20px; color: #1e293b; }
-    h2 { font-size: 24px; margin-bottom: 8px; }
-    p.subtitle { color: #64748b; margin-top: 0; margin-bottom: 24px; }
-    input[type="text"] { width: 100%; padding: 14px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; outline: none; }
-    input[type="text"]:focus { border-color: #2563eb; }
-    button { margin-top: 12px; width: 100%; padding: 12px; font-size: 16px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .card { margin-top: 24px; padding: 16px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #2563eb; display: none; }
-    .card a { display: inline-block; margin-top: 8px; color: #2563eb; text-decoration: none; font-weight: 500; }
-  </style>
-</head>
-<body>
-  <h2>Add to Calendar</h2>
-  <p class="subtitle">Type what you need to do in plain English.</p>
-  <form id="scheduleForm">
-    <input type="text" id="prompt" placeholder='e.g., "gym tomorrow from 12-2" or "dentist at 3pm on Tuesday"' required />
-    <button type="submit" id="submitBtn">Schedule Event</button>
-  </form>
-
-  <div id="resultCard" class="card">
-    <div id="resultText"></div>
-    <a id="eventLink" target="_blank" href="#">Open in Google Calendar &rarr;</a>
-  </div>
-
-  <script>
-    document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('submitBtn');
-      const input = document.getElementById('prompt');
-      const resultCard = document.getElementById('resultCard');
-      const resultText = document.getElementById('resultText');
-      const eventLink = document.getElementById('eventLink');
-
-      btn.disabled = true;
-      btn.innerText = 'Creating event...';
-
-      try {
-        const res = await fetch('/schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            text: input.value,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            clientNow: new Date().toISOString()
-          })
-        });
-
-        const data = await res.json();
-        if (res.ok) {
-          resultCard.style.display = 'block';
-          resultText.innerHTML = `<strong>${data.summary}</strong><br><span style="color:#64748b;font-size:14px;">${data.start.replace('T', ' ')} &rarr; ${data.end.replace('T', ' ')}</span>`;
-          eventLink.href = data.link;
-          input.value = '';
-        } else {
-          alert(data.error || 'Failed to schedule');
-        }
-      } catch(err) {
-        alert('Request failed: ' + err.message);
-      } finally {
-        btn.disabled = false;
-        btn.innerText = 'Schedule Event';
-      }
-    });
-  </script>
-</body>
-</html>
-"""
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)

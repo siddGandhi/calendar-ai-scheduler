@@ -2,69 +2,160 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Calendar AI</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 80px auto; padding: 0 20px; color: #1e293b; }
-    h2 { font-size: 24px; margin-bottom: 8px; }
-    p.subtitle { color: #64748b; margin-top: 0; margin-bottom: 24px; }
-    input[type="text"] { width: 100%; padding: 14px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; outline: none; }
-    input[type="text"]:focus { border-color: #2563eb; }
-    button { margin-top: 12px; width: 100%; padding: 12px; font-size: 16px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
+    .card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    h2 { margin-top: 0; font-size: 22px; }
+    p.subtitle { color: #64748b; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }
+    textarea { width: 100%; height: 75px; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; resize: none; font-family: inherit; }
+    textarea:focus, input:focus { border-color: #2563eb; outline: none; }
+    .status { font-size: 13px; color: #64748b; margin-top: 6px; min-height: 18px; }
+    
+    #editSection { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    .field-group { margin-bottom: 14px; }
+    label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 4px; }
+    input[type="text"], input[type="datetime-local"] { width: 100%; padding: 10px; font-size: 15px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    
+    button { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; margin-top: 10px; }
     button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .card { margin-top: 24px; padding: 16px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #2563eb; display: none; }
-    .card a { display: inline-block; margin-top: 8px; color: #2563eb; text-decoration: none; font-weight: 500; }
+    .success-banner { margin-top: 16px; padding: 12px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px; display: none; }
+    .success-banner a { color: #059669; font-weight: 600; text-decoration: none; }
   </style>
 </head>
 <body>
-  <h2>Add to Calendar</h2>
-  <p class="subtitle">Type what you need to do in plain English.</p>
-  <form id="scheduleForm">
-    <input type="text" id="prompt" placeholder='e.g., "gym tomorrow from 12-2" or "dentist at 3pm on Tuesday"' required />
-    <button type="submit" id="submitBtn">Schedule Event</button>
-  </form>
+  <div class="card">
+    <h2>Add Event</h2>
+    <p class="subtitle">Type naturally. After pausing for 3 seconds, preview & edit options will appear.</p>
+    
+    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, lunch meeting with Sarah Friday at 1pm"></textarea>
+    <div id="parseStatus" class="status"></div>
 
-  <div id="resultCard" class="card">
-    <div id="resultText"></div>
-    <a id="eventLink" target="_blank" href="#">Open in Google Calendar &rarr;</a>
+    <form id="editSection">
+      <div class="field-group">
+        <label for="eventSummary">Event Title</label>
+        <input type="text" id="eventSummary" required />
+      </div>
+
+      <div class="grid-2">
+        <div class="field-group">
+          <label for="eventStart">Start Time</label>
+          <input type="datetime-local" id="eventStart" required />
+        </div>
+        <div class="field-group">
+          <label for="eventEnd">End Time</label>
+          <input type="datetime-local" id="eventEnd" required />
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label for="eventDesc">Description / Notes</label>
+        <input type="text" id="eventDesc" placeholder="Optional notes" />
+      </div>
+
+      <button type="submit" id="confirmBtn">Confirm & Add to Calendar</button>
+    </form>
+
+    <div id="successCard" class="success-banner">
+      <span>Event created! </span>
+      <a id="calendarLink" target="_blank" href="#">View in Google Calendar &rarr;</a>
+    </div>
   </div>
 
   <script>
-    document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const btn = document.getElementById('submitBtn');
-      const input = document.getElementById('prompt');
-      const resultCard = document.getElementById('resultCard');
-      const resultText = document.getElementById('resultText');
-      const eventLink = document.getElementById('eventLink');
+    let debounceTimer;
+    const promptInput = document.getElementById('promptInput');
+    const parseStatus = document.getElementById('parseStatus');
+    const editSection = document.getElementById('editSection');
+    const confirmBtn = document.getElementById('confirmBtn');
+    const successCard = document.getElementById('successCard');
+    const calendarLink = document.getElementById('calendarLink');
 
-      btn.disabled = true;
-      btn.innerText = 'Creating event...';
+    const summaryInput = document.getElementById('eventSummary');
+    const startInput = document.getElementById('eventStart');
+    const endInput = document.getElementById('eventEnd');
+    const descInput = document.getElementById('eventDesc');
+
+    promptInput.addEventListener('input', () => {
+      clearTimeout(debounceTimer);
+      successCard.style.display = 'none';
+
+      const val = promptInput.value.trim();
+      if (!val) {
+        parseStatus.innerText = '';
+        editSection.style.display = 'none';
+        return;
+      }
+
+      parseStatus.innerText = 'Waiting for you to finish typing...';
+
+      debounceTimer = setTimeout(async () => {
+        parseStatus.innerText = 'Extracting event details with AI...';
+
+        try {
+          const res = await fetch('/parse', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              text: val,
+              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              clientNow: new Date().toISOString()
+            })
+          });
+
+          const data = await res.json();
+          if (res.ok) {
+            summaryInput.value = data.summary || '';
+            startInput.value = data.start_iso.slice(0, 16);
+            endInput.value = data.end_iso.slice(0, 16);
+            descInput.value = data.description || '';
+
+            parseStatus.innerText = 'Review or edit details below:';
+            editSection.style.display = 'block';
+          } else {
+            parseStatus.innerText = data.error || 'Failed to parse text.';
+          }
+        } catch (err) {
+          parseStatus.innerText = 'Error connecting to server.';
+        }
+      }, 3000);
+    });
+
+    editSection.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      confirmBtn.disabled = true;
+      confirmBtn.innerText = 'Scheduling...';
 
       try {
         const res = await fetch('/schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text: input.value,
-            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-            clientNow: new Date().toISOString()
+            summary: summaryInput.value,
+            description: descInput.value,
+            start_iso: startInput.value,
+            end_iso: endInput.value,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
         });
 
         const data = await res.json();
         if (res.ok) {
-          resultCard.style.display = 'block';
-          resultText.innerHTML = `<strong>${data.summary}</strong><br><span style="color:#64748b;font-size:14px;">${data.start.replace('T', ' ')} &rarr; ${data.end.replace('T', ' ')}</span>`;
-          eventLink.href = data.link;
-          input.value = '';
+          successCard.style.display = 'block';
+          calendarLink.href = data.link;
+          promptInput.value = '';
+          editSection.style.display = 'none';
+          parseStatus.innerText = '';
         } else {
-          alert(data.error || 'Failed to schedule');
+          alert(data.error || 'Could not save event.');
         }
-      } catch(err) {
+      } catch (err) {
         alert('Request failed: ' + err.message);
       } finally {
-        btn.disabled = false;
-        btn.innerText = 'Schedule Event';
+        confirmBtn.disabled = false;
+        confirmBtn.innerText = 'Confirm & Add to Calendar';
       }
     });
   </script>
