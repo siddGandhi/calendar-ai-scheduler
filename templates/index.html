@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Quick Calendar AI</title>
+  <style>
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 80px auto; padding: 0 20px; color: #1e293b; }
+    h2 { font-size: 24px; margin-bottom: 8px; }
+    p.subtitle { color: #64748b; margin-top: 0; margin-bottom: 24px; }
+    input[type="text"] { width: 100%; padding: 14px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; outline: none; }
+    input[type="text"]:focus { border-color: #2563eb; }
+    button { margin-top: 12px; width: 100%; padding: 12px; font-size: 16px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; }
+    button:disabled { background: #94a3b8; cursor: not-allowed; }
+    .card { margin-top: 24px; padding: 16px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-left: 5px solid #2563eb; display: none; }
+    .card a { display: inline-block; margin-top: 8px; color: #2563eb; text-decoration: none; font-weight: 500; }
+  </style>
+</head>
+<body>
+  <h2>Add to Calendar</h2>
+  <p class="subtitle">Type what you need to do in plain English.</p>
+  <form id="scheduleForm">
+    <input type="text" id="prompt" placeholder='e.g., "gym tomorrow from 12-2" or "dentist at 3pm on Tuesday"' required />
+    <button type="submit" id="submitBtn">Schedule Event</button>
+  </form>
+
+  <div id="resultCard" class="card">
+    <div id="resultText"></div>
+    <a id="eventLink" target="_blank" href="#">Open in Google Calendar &rarr;</a>
+  </div>
+
+  <script>
+    document.getElementById('scheduleForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('submitBtn');
+      const input = document.getElementById('prompt');
+      const resultCard = document.getElementById('resultCard');
+      const resultText = document.getElementById('resultText');
+      const eventLink = document.getElementById('eventLink');
+
+      btn.disabled = true;
+      btn.innerText = 'Creating event...';
+
+      try {
+        const res = await fetch('/schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: input.value,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            clientNow: new Date().toISOString()
+          })
+        });
+
+        const data = await res.json();
+        if (res.ok) {
+          resultCard.style.display = 'block';
+          resultText.innerHTML = `<strong>${data.summary}</strong><br><span style="color:#64748b;font-size:14px;">${data.start.replace('T', ' ')} &rarr; ${data.end.replace('T', ' ')}</span>`;
+          eventLink.href = data.link;
+          input.value = '';
+        } else {
+          alert(data.error || 'Failed to schedule');
+        }
+      } catch(err) {
+        alert('Request failed: ' + err.message);
+      } finally {
+        btn.disabled = false;
+        btn.innerText = 'Schedule Event';
+      }
+    });
+  </script>
+</body>
+</html>
