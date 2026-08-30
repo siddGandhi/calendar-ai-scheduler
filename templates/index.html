@@ -5,40 +5,47 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Calendar AI</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 50px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
     .card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     h2 { margin-top: 0; font-size: 22px; }
     p.subtitle { color: #64748b; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }
-    textarea { width: 100%; height: 75px; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; resize: none; font-family: inherit; }
+    textarea { width: 100%; height: 80px; padding: 12px; font-size: 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; resize: vertical; font-family: inherit; }
     textarea:focus, input:focus { border-color: #2563eb; outline: none; }
     
-    /* Live Indicator & Status Row */
     .status-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-height: 24px; font-size: 13px; }
     .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-weight: 500; font-size: 12px; display: none; }
-    .badge.typing { display: inline-flex; background: #e0f2fe; color: #0369a1; }
     .badge.countdown { display: inline-flex; background: #fef3c7; color: #b45309; }
     .badge.processing { display: inline-flex; background: #ede9fe; color: #6d28d9; }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     .status-text { color: #64748b; }
 
-    #editSection { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
-    .field-group { margin-bottom: 14px; }
-    label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 4px; }
-    input[type="text"], input[type="datetime-local"] { width: 100%; padding: 10px; font-size: 15px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    /* Multi-event Cards */
+    #editContainer { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+    .event-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 14px; position: relative; }
+    .event-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    .event-count { font-size: 13px; font-weight: 700; color: #2563eb; }
+    .remove-btn { background: none; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0; }
+    .remove-btn:hover { text-decoration: underline; }
     
-    button { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; margin-top: 10px; }
-    button:disabled { background: #94a3b8; cursor: not-allowed; }
-    .success-banner { margin-top: 16px; padding: 12px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px; display: none; }
+    .field-group { margin-bottom: 10px; }
+    label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 3px; }
+    input[type="text"], input[type="datetime-local"] { width: 100%; padding: 8px 10px; font-size: 14px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; background: white; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+    .submit-btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; margin-top: 10px; }
+    .submit-btn:disabled { background: #94a3b8; cursor: not-allowed; }
+    
+    .success-banner { margin-top: 16px; padding: 14px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px; display: none; }
+    .success-banner ul { margin: 6px 0 0 18px; padding: 0; font-size: 14px; }
     .success-banner a { color: #059669; font-weight: 600; text-decoration: none; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h2>Add Event</h2>
-    <p class="subtitle">Type naturally. Pause for 3 seconds to review & edit event details.</p>
+    <h2>Smart Calendar Scheduler</h2>
+    <p class="subtitle">Type one or multiple events in plain English. We'll parse them into editable cards.</p>
     
-    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2"></textarea>
+    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, study calculus from 3-5, and dinner with Alex at 7"></textarea>
     
     <div class="status-container">
       <span id="indicatorBadge" class="badge">
@@ -48,34 +55,14 @@
       <span id="statusText" class="status-text"></span>
     </div>
 
-    <form id="editSection">
-      <div class="field-group">
-        <label for="eventSummary">Event Title</label>
-        <input type="text" id="eventSummary" required />
-      </div>
-
-      <div class="grid-2">
-        <div class="field-group">
-          <label for="eventStart">Start Time</label>
-          <input type="datetime-local" id="eventStart" required />
-        </div>
-        <div class="field-group">
-          <label for="eventEnd">End Time</label>
-          <input type="datetime-local" id="eventEnd" required />
-        </div>
-      </div>
-
-      <div class="field-group">
-        <label for="eventDesc">Description / Notes</label>
-        <input type="text" id="eventDesc" placeholder="Optional notes" />
-      </div>
-
-      <button type="submit" id="confirmBtn">Confirm & Add to Calendar</button>
+    <form id="editContainer">
+      <div id="cardsList"></div>
+      <button type="submit" id="confirmBtn" class="submit-btn">Confirm & Add All to Calendar</button>
     </form>
 
     <div id="successCard" class="success-banner">
-      <span>Event scheduled! </span>
-      <a id="calendarLink" target="_blank" href="#">View in Google Calendar &rarr;</a>
+      <strong id="successTitle">Events created!</strong>
+      <ul id="createdEventsList"></ul>
     </div>
   </div>
 
@@ -87,21 +74,47 @@
     const indicatorBadge = document.getElementById('indicatorBadge');
     const badgeText = document.getElementById('badgeText');
     const statusText = document.getElementById('statusText');
-    const editSection = document.getElementById('editSection');
+    const editContainer = document.getElementById('editContainer');
+    const cardsList = document.getElementById('cardsList');
     const confirmBtn = document.getElementById('confirmBtn');
     const successCard = document.getElementById('successCard');
-    const calendarLink = document.getElementById('calendarLink');
-
-    const summaryInput = document.getElementById('eventSummary');
-    const startInput = document.getElementById('eventStart');
-    const endInput = document.getElementById('eventEnd');
-    const descInput = document.getElementById('eventDesc');
+    const createdEventsList = document.getElementById('createdEventsList');
 
     function updateBadge(state, text, message = '') {
       indicatorBadge.className = 'badge ' + state;
       indicatorBadge.style.display = state ? 'inline-flex' : 'none';
       badgeText.innerText = text;
       statusText.innerText = message;
+    }
+
+    function createCardElement(item, index) {
+      const card = document.createElement('div');
+      card.className = 'event-item';
+      card.innerHTML = `
+        <div class="event-header">
+          <span class="event-count">Event #${index + 1}</span>
+          <button type="button" class="remove-btn" onclick="this.closest('.event-item').remove()">Remove</button>
+        </div>
+        <div class="field-group">
+          <label>Event Title</label>
+          <input type="text" class="input-summary" value="${item.summary || ''}" required />
+        </div>
+        <div class="grid-2">
+          <div class="field-group">
+            <label>Start Time</label>
+            <input type="datetime-local" class="input-start" value="${(item.start_iso || '').slice(0, 16)}" required />
+          </div>
+          <div class="field-group">
+            <label>End Time</label>
+            <input type="datetime-local" class="input-end" value="${(item.end_iso || '').slice(0, 16)}" required />
+          </div>
+        </div>
+        <div class="field-group">
+          <label>Description / Notes</label>
+          <input type="text" class="input-desc" value="${item.description || ''}" placeholder="Optional notes" />
+        </div>
+      `;
+      return card;
     }
 
     promptInput.addEventListener('input', () => {
@@ -111,22 +124,21 @@
       const val = promptInput.value.trim();
       if (!val) {
         updateBadge('', '', '');
-        editSection.style.display = 'none';
+        editContainer.style.display = 'none';
+        cardsList.innerHTML = '';
         return;
       }
 
-      // Initial state while user is actively hitting keys
       secondsLeft = 3;
       updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
 
-      // Live 1-second countdown ticker
       countdownInterval = setInterval(async () => {
         secondsLeft--;
         if (secondsLeft > 0) {
           updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
         } else {
           clearInterval(countdownInterval);
-          updateBadge('processing', 'AI Extracting...', 'Analyzing text with Gemini');
+          updateBadge('processing', 'AI Extracting...', 'Parsing single or multiple events with Gemini');
 
           try {
             const res = await fetch('/parse', {
@@ -146,16 +158,17 @@
             }
 
             const data = await res.json();
-            if (res.ok) {
-              summaryInput.value = data.summary || '';
-              startInput.value = (data.start_iso || '').slice(0, 16);
-              endInput.value = (data.end_iso || '').slice(0, 16);
-              descInput.value = data.description || '';
+            if (res.ok && data.events && data.events.length > 0) {
+              cardsList.innerHTML = '';
+              data.events.forEach((item, idx) => {
+                cardsList.appendChild(createCardElement(item, idx));
+              });
 
-              updateBadge('', '', 'Ready for review:');
-              editSection.style.display = 'block';
+              updateBadge('', '', `Parsed ${data.events.length} event(s). Review details below:`);
+              confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Events to Calendar` : 'Confirm & Add to Calendar';
+              editContainer.style.display = 'block';
             } else {
-              updateBadge('', '', data.error || 'Failed to parse text.');
+              updateBadge('', '', data.error || 'Could not find any clear calendar events.');
             }
           } catch (err) {
             updateBadge('', '', 'Network error parsing text.');
@@ -164,26 +177,39 @@
       }, 1000);
     });
 
-    editSection.addEventListener('submit', async (e) => {
+    editContainer.addEventListener('submit', async (e) => {
       e.preventDefault();
 
-      if (!summaryInput.value || !startInput.value || !endInput.value) {
-        alert('Please fill out all required fields.');
+      const cards = cardsList.querySelectorAll('.event-item');
+      if (cards.length === 0) {
+        alert('No events to schedule.');
         return;
       }
 
+      const eventsToSubmit = [];
+      for (const card of cards) {
+        const summary = card.querySelector('.input-summary').value.trim();
+        const start_iso = card.querySelector('.input-start').value;
+        const end_iso = card.querySelector('.input-end').value;
+        const description = card.querySelector('.input-desc').value.trim();
+
+        if (!summary || !start_iso || !end_iso) {
+          alert('Please make sure Title, Start Time, and End Time are filled for all events.');
+          return;
+        }
+
+        eventsToSubmit.push({ summary, start_iso, end_iso, description });
+      }
+
       confirmBtn.disabled = true;
-      confirmBtn.innerText = 'Scheduling...';
+      confirmBtn.innerText = 'Adding to Google Calendar...';
 
       try {
         const res = await fetch('/schedule', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            summary: summaryInput.value,
-            description: descInput.value,
-            start_iso: startInput.value,
-            end_iso: endInput.value,
+            events: eventsToSubmit,
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
         });
@@ -196,19 +222,26 @@
 
         const data = await res.json();
         if (res.ok) {
+          createdEventsList.innerHTML = '';
+          data.events.forEach(item => {
+            const li = document.createElement('li');
+            li.innerHTML = `<a href="${item.link}" target="_blank">${item.summary} &rarr;</a>`;
+            createdEventsList.appendChild(li);
+          });
+
           successCard.style.display = 'block';
-          calendarLink.href = data.link;
           promptInput.value = '';
-          editSection.style.display = 'none';
+          cardsList.innerHTML = '';
+          editContainer.style.display = 'none';
           updateBadge('', '', '');
         } else {
-          alert(data.error || 'Could not save event.');
+          alert(data.error || 'Could not save events.');
         }
       } catch (err) {
         alert('Request failed: ' + err.message);
       } finally {
         confirmBtn.disabled = false;
-        confirmBtn.innerText = 'Confirm & Add to Calendar';
+        confirmBtn.innerText = 'Confirm & Add All to Calendar';
       }
     });
   </script>

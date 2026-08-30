@@ -1,6 +1,7 @@
 import os
 import json
 from datetime import datetime
+from typing import List
 from flask import Flask, redirect, request, session, jsonify, render_template, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 from google.oauth2.credentials import Credentials
@@ -14,7 +15,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
-# Ensure HTTPS URLs resolve correctly behind Render reverse proxy
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
 
@@ -30,11 +30,14 @@ def get_oauth_config():
         return json.loads(raw_creds)
     raise ValueError("Google OAuth credentials not found.")
 
-class CalendarEventSchema(BaseModel):
+class SingleEvent(BaseModel):
     summary: str
     description: str
     start_iso: str  # Format: YYYY-MM-DDTHH:MM
     end_iso: str    # Format: YYYY-MM-DDTHH:MM
+
+class EventListSchema(BaseModel):
+    events: List[SingleEvent]
 
 @app.route('/')
 def index():
@@ -92,7 +95,7 @@ def parse():
     if 'credentials' not in session:
         return jsonify({"error": "Not authenticated"}), 401
 
-    data = request.get_json()
+    data = request.get_json() or {}
     user_prompt = data.get('text', '').strip()
     user_tz = data.get('timeZone', 'UTC')
     current_time = data.get('clientNow', datetime.now().isoformat())
@@ -104,9 +107,9 @@ def parse():
     You are an intelligent calendar assistant.
     Current Reference Timestamp: {current_time}
     User Local Timezone: {user_tz}
-    Extract the event title, brief description, and start/end time.
+    Extract ONE OR MULTIPLE calendar events from the user's input.
     Format ISO strings strictly as 'YYYY-MM-DDTHH:MM' in user's local timezone.
-    If duration is unspecified, assume 1 hour.
+    If duration is unspecified for an item, default to 1 hour.
     """
 
     try:
@@ -116,7 +119,7 @@ def parse():
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
-                response_schema=CalendarEventSchema,
+                response_schema=EventListSchema,
                 temperature=0.1
             )
         )
@@ -128,41 +131,49 @@ def parse():
 @app.route('/schedule', methods=['POST'])
 def schedule():
     if 'credentials' not in session:
-        return jsonify({"error": "Not authenticated with Google"}), 401
+        return jsonify({"error": "Not authenticated"}), 401
 
     data = request.get_json() or {}
-    summary = data.get('summary')
-    description = data.get('description', '')
-    start_iso = data.get('start_iso')
-    end_iso = data.get('end_iso')
+    events = data.get('events', [])
     user_tz = data.get('timeZone', 'UTC')
 
-    # Guard against None / empty values
-    if not summary or not start_iso or not end_iso:
-        return jsonify({"error": "Missing required event details (summary, start time, or end time)."}), 400
-
-    # Ensure ISO string includes seconds (:00) if only YYYY-MM-DDTHH:MM was sent
-    start_formatted = f"{start_iso}:00" if len(start_iso) == 16 else start_iso
-    end_formatted = f"{end_iso}:00" if len(end_iso) == 16 else end_iso
+    if not events:
+        return jsonify({"error": "No events provided"}), 400
 
     creds = Credentials(**session['credentials'])
     service = build('calendar', 'v3', credentials=creds)
 
-    body = {
-        'summary': summary,
-        'description': description,
-        'start': {'dateTime': start_formatted, 'timeZone': user_tz},
-        'end': {'dateTime': end_formatted, 'timeZone': user_tz},
-    }
+    created_links = []
+    for item in events:
+        summary = item.get('summary')
+        start_iso = item.get('start_iso')
+        end_iso = item.get('end_iso')
+        description = item.get('description', '')
 
-    try:
-        created = service.events().insert(calendarId='primary', body=body).execute()
-        return jsonify({
-            "status": "success",
-            "link": created.get('htmlLink')
-        })
-    except Exception as e:
-        return jsonify({"error": f"Google Calendar API Error: {str(e)}"}), 500
+        if not summary or not start_iso or not end_iso:
+            continue
+
+        start_formatted = f"{start_iso}:00" if len(start_iso) == 16 else start_iso
+        end_formatted = f"{end_iso}:00" if len(end_iso) == 16 else end_iso
+
+        body = {
+            'summary': summary,
+            'description': description,
+            'start': {'dateTime': start_formatted, 'timeZone': user_tz},
+            'end': {'dateTime': end_formatted, 'timeZone': user_tz},
+        }
+
+        try:
+            res = service.events().insert(calendarId='primary', body=body).execute()
+            created_links.append({"summary": summary, "link": res.get('htmlLink')})
+        except Exception as e:
+            return jsonify({"error": f"Failed inserting '{summary}': {str(e)}"}), 500
+
+    return jsonify({
+        "status": "success",
+        "count": len(created_links),
+        "events": created_links
+    })
 
 if __name__ == '__main__':
     app.run(port=5000, debug=True)
