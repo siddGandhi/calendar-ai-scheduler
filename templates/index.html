@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Quick Calendar AI</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 60px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
+    body { font-family: system-ui, -apple-system, sans-serif; max-width: 600px; margin: 60px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
     .card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
     h2 { margin-top: 0; font-size: 22px; }
     p.subtitle { color: #64748b; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }
@@ -28,9 +28,9 @@
 <body>
   <div class="card">
     <h2>Add Event</h2>
-    <p class="subtitle">Type naturally. After pausing for 3 seconds, preview & edit options will appear.</p>
+    <p class="subtitle">Type naturally. After 3 seconds, editable event details will appear.</p>
     
-    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, lunch meeting with Sarah Friday at 1pm"></textarea>
+    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2"></textarea>
     <div id="parseStatus" class="status"></div>
 
     <form id="editSection">
@@ -59,7 +59,7 @@
     </form>
 
     <div id="successCard" class="success-banner">
-      <span>Event created! </span>
+      <span>Event scheduled! </span>
       <a id="calendarLink" target="_blank" href="#">View in Google Calendar &rarr;</a>
     </div>
   </div>
@@ -89,10 +89,10 @@
         return;
       }
 
-      parseStatus.innerText = 'Waiting for you to finish typing...';
+      parseStatus.innerText = 'Waiting for typing to stop...';
 
       debounceTimer = setTimeout(async () => {
-        parseStatus.innerText = 'Extracting event details with AI...';
+        parseStatus.innerText = 'Extracting event details...';
 
         try {
           const res = await fetch('/parse', {
@@ -105,26 +105,38 @@
             })
           });
 
+          const contentType = res.headers.get("content-type") || "";
+          if (!contentType.includes("application/json")) {
+            parseStatus.innerText = 'Session expired. Refresh to log in again.';
+            return;
+          }
+
           const data = await res.json();
           if (res.ok) {
             summaryInput.value = data.summary || '';
-            startInput.value = data.start_iso.slice(0, 16);
-            endInput.value = data.end_iso.slice(0, 16);
+            startInput.value = (data.start_iso || '').slice(0, 16);
+            endInput.value = (data.end_iso || '').slice(0, 16);
             descInput.value = data.description || '';
 
-            parseStatus.innerText = 'Review or edit details below:';
+            parseStatus.innerText = 'Review details and click confirm:';
             editSection.style.display = 'block';
           } else {
             parseStatus.innerText = data.error || 'Failed to parse text.';
           }
         } catch (err) {
-          parseStatus.innerText = 'Error connecting to server.';
+          parseStatus.innerText = 'Network error parsing text.';
         }
       }, 3000);
     });
 
     editSection.addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      if (!summaryInput.value || !startInput.value || !endInput.value) {
+        alert('Please ensure Title, Start Time, and End Time are filled in.');
+        return;
+      }
+
       confirmBtn.disabled = true;
       confirmBtn.innerText = 'Scheduling...';
 
@@ -140,6 +152,12 @@
             timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
           })
         });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          alert("Server error or session expired. Please refresh the page.");
+          return;
+        }
 
         const data = await res.json();
         if (res.ok) {

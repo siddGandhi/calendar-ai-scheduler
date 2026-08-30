@@ -128,14 +128,22 @@ def parse():
 @app.route('/schedule', methods=['POST'])
 def schedule():
     if 'credentials' not in session:
-        return jsonify({"error": "Not authenticated"}), 401
+        return jsonify({"error": "Not authenticated with Google"}), 401
 
-    data = request.get_json()
+    data = request.get_json() or {}
     summary = data.get('summary')
     description = data.get('description', '')
     start_iso = data.get('start_iso')
     end_iso = data.get('end_iso')
     user_tz = data.get('timeZone', 'UTC')
+
+    # Guard against None / empty values
+    if not summary or not start_iso or not end_iso:
+        return jsonify({"error": "Missing required event details (summary, start time, or end time)."}), 400
+
+    # Ensure ISO string includes seconds (:00) if only YYYY-MM-DDTHH:MM was sent
+    start_formatted = f"{start_iso}:00" if len(start_iso) == 16 else start_iso
+    end_formatted = f"{end_iso}:00" if len(end_iso) == 16 else end_iso
 
     creds = Credentials(**session['credentials'])
     service = build('calendar', 'v3', credentials=creds)
@@ -143,8 +151,8 @@ def schedule():
     body = {
         'summary': summary,
         'description': description,
-        'start': {'dateTime': f"{start_iso}:00" if len(start_iso) == 16 else start_iso, 'timeZone': user_tz},
-        'end': {'dateTime': f"{end_iso}:00" if len(end_iso) == 16 else end_iso, 'timeZone': user_tz},
+        'start': {'dateTime': start_formatted, 'timeZone': user_tz},
+        'end': {'dateTime': end_formatted, 'timeZone': user_tz},
     }
 
     try:
