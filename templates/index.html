@@ -11,8 +11,16 @@
     p.subtitle { color: #64748b; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }
     textarea { width: 100%; height: 75px; padding: 12px; font-size: 16px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; resize: none; font-family: inherit; }
     textarea:focus, input:focus { border-color: #2563eb; outline: none; }
-    .status { font-size: 13px; color: #64748b; margin-top: 6px; min-height: 18px; }
     
+    /* Live Indicator & Status Row */
+    .status-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-height: 24px; font-size: 13px; }
+    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-weight: 500; font-size: 12px; display: none; }
+    .badge.typing { display: inline-flex; background: #e0f2fe; color: #0369a1; }
+    .badge.countdown { display: inline-flex; background: #fef3c7; color: #b45309; }
+    .badge.processing { display: inline-flex; background: #ede9fe; color: #6d28d9; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .status-text { color: #64748b; }
+
     #editSection { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
     .field-group { margin-bottom: 14px; }
     label { display: block; font-size: 13px; font-weight: 600; color: #475569; margin-bottom: 4px; }
@@ -28,10 +36,17 @@
 <body>
   <div class="card">
     <h2>Add Event</h2>
-    <p class="subtitle">Type naturally. After 3 seconds, editable event details will appear.</p>
+    <p class="subtitle">Type naturally. Pause for 3 seconds to review & edit event details.</p>
     
     <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2"></textarea>
-    <div id="parseStatus" class="status"></div>
+    
+    <div class="status-container">
+      <span id="indicatorBadge" class="badge">
+        <span class="dot"></span>
+        <span id="badgeText"></span>
+      </span>
+      <span id="statusText" class="status-text"></span>
+    </div>
 
     <form id="editSection">
       <div class="field-group">
@@ -65,9 +80,13 @@
   </div>
 
   <script>
-    let debounceTimer;
+    let countdownInterval;
+    let secondsLeft = 3;
+
     const promptInput = document.getElementById('promptInput');
-    const parseStatus = document.getElementById('parseStatus');
+    const indicatorBadge = document.getElementById('indicatorBadge');
+    const badgeText = document.getElementById('badgeText');
+    const statusText = document.getElementById('statusText');
     const editSection = document.getElementById('editSection');
     const confirmBtn = document.getElementById('confirmBtn');
     const successCard = document.getElementById('successCard');
@@ -78,62 +97,78 @@
     const endInput = document.getElementById('eventEnd');
     const descInput = document.getElementById('eventDesc');
 
+    function updateBadge(state, text, message = '') {
+      indicatorBadge.className = 'badge ' + state;
+      indicatorBadge.style.display = state ? 'inline-flex' : 'none';
+      badgeText.innerText = text;
+      statusText.innerText = message;
+    }
+
     promptInput.addEventListener('input', () => {
-      clearTimeout(debounceTimer);
+      clearInterval(countdownInterval);
       successCard.style.display = 'none';
 
       const val = promptInput.value.trim();
       if (!val) {
-        parseStatus.innerText = '';
+        updateBadge('', '', '');
         editSection.style.display = 'none';
         return;
       }
 
-      parseStatus.innerText = 'Waiting for typing to stop...';
+      // Initial state while user is actively hitting keys
+      secondsLeft = 3;
+      updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
 
-      debounceTimer = setTimeout(async () => {
-        parseStatus.innerText = 'Extracting event details...';
+      // Live 1-second countdown ticker
+      countdownInterval = setInterval(async () => {
+        secondsLeft--;
+        if (secondsLeft > 0) {
+          updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
+        } else {
+          clearInterval(countdownInterval);
+          updateBadge('processing', 'AI Extracting...', 'Analyzing text with Gemini');
 
-        try {
-          const res = await fetch('/parse', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              text: val,
-              timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-              clientNow: new Date().toISOString()
-            })
-          });
+          try {
+            const res = await fetch('/parse', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                text: val,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                clientNow: new Date().toISOString()
+              })
+            });
 
-          const contentType = res.headers.get("content-type") || "";
-          if (!contentType.includes("application/json")) {
-            parseStatus.innerText = 'Session expired. Refresh to log in again.';
-            return;
+            const contentType = res.headers.get("content-type") || "";
+            if (!contentType.includes("application/json")) {
+              updateBadge('', '', 'Session expired. Please refresh the page.');
+              return;
+            }
+
+            const data = await res.json();
+            if (res.ok) {
+              summaryInput.value = data.summary || '';
+              startInput.value = (data.start_iso || '').slice(0, 16);
+              endInput.value = (data.end_iso || '').slice(0, 16);
+              descInput.value = data.description || '';
+
+              updateBadge('', '', 'Ready for review:');
+              editSection.style.display = 'block';
+            } else {
+              updateBadge('', '', data.error || 'Failed to parse text.');
+            }
+          } catch (err) {
+            updateBadge('', '', 'Network error parsing text.');
           }
-
-          const data = await res.json();
-          if (res.ok) {
-            summaryInput.value = data.summary || '';
-            startInput.value = (data.start_iso || '').slice(0, 16);
-            endInput.value = (data.end_iso || '').slice(0, 16);
-            descInput.value = data.description || '';
-
-            parseStatus.innerText = 'Review details and click confirm:';
-            editSection.style.display = 'block';
-          } else {
-            parseStatus.innerText = data.error || 'Failed to parse text.';
-          }
-        } catch (err) {
-          parseStatus.innerText = 'Network error parsing text.';
         }
-      }, 3000);
+      }, 1000);
     });
 
     editSection.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       if (!summaryInput.value || !startInput.value || !endInput.value) {
-        alert('Please ensure Title, Start Time, and End Time are filled in.');
+        alert('Please fill out all required fields.');
         return;
       }
 
@@ -165,7 +200,7 @@
           calendarLink.href = data.link;
           promptInput.value = '';
           editSection.style.display = 'none';
-          parseStatus.innerText = '';
+          updateBadge('', '', '');
         } else {
           alert(data.error || 'Could not save event.');
         }
