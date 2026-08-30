@@ -2,6 +2,7 @@ import os
 import json
 from datetime import datetime
 from flask import Flask, redirect, request, session, jsonify, render_template_string, url_for
+from werkzeug.middleware.proxy_fix import ProxyFix
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
@@ -13,11 +14,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+# Tell Flask it is behind a reverse proxy (Render) so https URLs resolve properly
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
-
-# Allow OAuth over HTTP only for local development
-if os.environ.get("FLASK_ENV") != "production":
-    os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
 
 # Initialize Gemini Client
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
@@ -26,7 +25,6 @@ gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 SCOPES = ['https://www.googleapis.com/auth/calendar.events']
 
 def get_oauth_config():
-    """Load OAuth client config from file or environment variable."""
     if os.path.exists('credentials.json'):
         return json.load(open('credentials.json'))
     raw_creds = os.environ.get("GOOGLE_CREDENTIALS_JSON")
