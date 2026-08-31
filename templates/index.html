@@ -2,50 +2,180 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Quick Calendar AI</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Smart Calendar</title>
   <style>
-    body { font-family: system-ui, -apple-system, sans-serif; max-width: 640px; margin: 50px auto; padding: 0 20px; color: #1e293b; background: #f8fafc; }
-    .card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-    h2 { margin-top: 0; font-size: 22px; }
-    p.subtitle { color: #64748b; font-size: 14px; margin-top: -6px; margin-bottom: 20px; }
-    textarea { width: 100%; height: 80px; padding: 12px; font-size: 15px; border-radius: 8px; border: 1px solid #cbd5e1; box-sizing: border-box; resize: vertical; font-family: inherit; }
-    textarea:focus, input:focus { border-color: #2563eb; outline: none; }
-    
-    .status-container { display: flex; align-items: center; gap: 8px; margin-top: 8px; min-height: 24px; font-size: 13px; }
-    .badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px; border-radius: 9999px; font-weight: 500; font-size: 12px; display: none; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      max-width: 600px;
+      margin: 0 auto;
+      padding: 16px 12px 60px 12px;
+      color: #0f172a;
+      background: #f1f5f9;
+      -webkit-text-size-adjust: 100%;
+    }
+    .card {
+      background: #ffffff;
+      padding: 18px 16px;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    h2 { margin: 0 0 4px 0; font-size: 20px; font-weight: 700; }
+    p.subtitle { color: #64748b; font-size: 13px; margin: 0 0 16px 0; line-height: 1.4; }
+
+    /* Auto-wrapping multi-line prompt */
+    #promptInput {
+      width: 100%;
+      min-height: 85px;
+      padding: 12px;
+      font-size: 16px; /* Prevents auto-zoom on iOS */
+      border-radius: 12px;
+      border: 1.5px solid #cbd5e1;
+      resize: vertical;
+      font-family: inherit;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.4;
+    }
+    #promptInput:focus, input:focus, textarea:focus {
+      border-color: #2563eb;
+      outline: none;
+    }
+
+    /* Live Countdown / Typing Indicator Badge */
+    .status-container {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      min-height: 24px;
+      font-size: 13px;
+    }
+    .badge {
+      display: none;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-weight: 600;
+      font-size: 12px;
+    }
     .badge.countdown { display: inline-flex; background: #fef3c7; color: #b45309; }
     .badge.processing { display: inline-flex; background: #ede9fe; color: #6d28d9; }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-    .status-text { color: #64748b; }
+    .status-text { color: #64748b; font-size: 12px; }
 
-    /* Multi-event Cards */
-    #editContainer { display: none; margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
-    .event-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 14px; position: relative; }
-    .event-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+    /* Mobile-Optimized Event Cards */
+    #editContainer { display: none; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
+    
+    .event-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 14px;
+    }
+    .event-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
     .event-count { font-size: 13px; font-weight: 700; color: #2563eb; }
-    .remove-btn { background: none; border: none; color: #ef4444; font-size: 13px; cursor: pointer; padding: 0; }
-    .remove-btn:hover { text-decoration: underline; }
-    
-    .field-group { margin-bottom: 10px; }
-    label { display: block; font-size: 12px; font-weight: 600; color: #475569; margin-bottom: 3px; }
-    input[type="text"], input[type="datetime-local"] { width: 100%; padding: 8px 10px; font-size: 14px; border-radius: 6px; border: 1px solid #cbd5e1; box-sizing: border-box; background: white; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .remove-btn {
+      background: #fee2e2;
+      border: none;
+      color: #ef4444;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 4px 10px;
+      border-radius: 6px;
+      cursor: pointer;
+    }
 
-    .submit-btn { width: 100%; padding: 12px; font-size: 15px; font-weight: 600; border-radius: 8px; border: none; background: #2563eb; color: white; cursor: pointer; margin-top: 10px; }
+    .field-group { margin-bottom: 10px; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #475569;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.025em;
+    }
+
+    /* Auto-wrapping multiline textareas for event titles & descriptions */
+    .auto-grow-input {
+      width: 100%;
+      min-height: 44px;
+      padding: 10px;
+      font-size: 16px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      font-family: inherit;
+      resize: none;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      line-height: 1.35;
+      overflow: hidden;
+    }
+
+    input[type="datetime-local"] {
+      width: 100%;
+      min-height: 44px;
+      padding: 8px 10px;
+      font-size: 15px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      color: #0f172a;
+    }
+
+    /* Responsive Grid: Stacks on mobile, splits 50/50 on larger tablets */
+    .grid-dates {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+    @media (min-width: 480px) {
+      .grid-dates { grid-template-columns: 1fr 1fr; }
+    }
+
+    .submit-btn {
+      width: 100%;
+      min-height: 48px;
+      padding: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 10px;
+      border: none;
+      background: #2563eb;
+      color: white;
+      cursor: pointer;
+      margin-top: 8px;
+    }
     .submit-btn:disabled { background: #94a3b8; cursor: not-allowed; }
-    
-    .success-banner { margin-top: 16px; padding: 14px; background: #ecfdf5; border-left: 4px solid #10b981; border-radius: 6px; display: none; }
-    .success-banner ul { margin: 6px 0 0 18px; padding: 0; font-size: 14px; }
-    .success-banner a { color: #059669; font-weight: 600; text-decoration: none; }
+
+    .success-banner {
+      margin-top: 16px;
+      padding: 14px;
+      background: #ecfdf5;
+      border-left: 4px solid #10b981;
+      border-radius: 8px;
+      display: none;
+    }
+    .success-banner ul { margin: 8px 0 0 16px; padding: 0; font-size: 14px; line-height: 1.6; }
+    .success-banner a { color: #059669; font-weight: 600; text-decoration: none; word-break: break-all; }
   </style>
 </head>
 <body>
   <div class="card">
     <h2>Smart Calendar Scheduler</h2>
-    <p class="subtitle">Type one or multiple events in plain English. We'll parse them into editable cards.</p>
     
-    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, study calculus from 3-5, and dinner with Alex at 7"></textarea>
+    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, study session with Alex on Friday 3 to 5:30"></textarea>
     
     <div class="status-container">
       <span id="indicatorBadge" class="badge">
@@ -57,11 +187,11 @@
 
     <form id="editContainer">
       <div id="cardsList"></div>
-      <button type="submit" id="confirmBtn" class="submit-btn">Confirm & Add All to Calendar</button>
+      <button type="submit" id="confirmBtn" class="submit-btn">Confirm & Add to Calendar</button>
     </form>
 
     <div id="successCard" class="success-banner">
-      <strong id="successTitle">Events created!</strong>
+      <strong>Scheduled Successfully!</strong>
       <ul id="createdEventsList"></ul>
     </div>
   </div>
@@ -87,6 +217,11 @@
       statusText.innerText = message;
     }
 
+    function autoResize(textarea) {
+      textarea.style.height = 'auto';
+      textarea.style.height = (textarea.scrollHeight) + 'px';
+    }
+
     function createCardElement(item, index) {
       const card = document.createElement('div');
       card.className = 'event-item';
@@ -97,9 +232,9 @@
         </div>
         <div class="field-group">
           <label>Event Title</label>
-          <input type="text" class="input-summary" value="${item.summary || ''}" required />
+          <textarea class="auto-grow-input input-summary" rows="1" required>${item.summary || ''}</textarea>
         </div>
-        <div class="grid-2">
+        <div class="grid-dates">
           <div class="field-group">
             <label>Start Time</label>
             <input type="datetime-local" class="input-start" value="${(item.start_iso || '').slice(0, 16)}" required />
@@ -110,10 +245,18 @@
           </div>
         </div>
         <div class="field-group">
-          <label>Description / Notes</label>
-          <input type="text" class="input-desc" value="${item.description || ''}" placeholder="Optional notes" />
+          <label>Notes / Description</label>
+          <textarea class="auto-grow-input input-desc" rows="1" placeholder="Optional details">${item.description || ''}</textarea>
         </div>
       `;
+
+      // Attach auto-expand behavior to multiline fields
+      const textareas = card.querySelectorAll('.auto-grow-input');
+      textareas.forEach(ta => {
+        ta.addEventListener('input', () => autoResize(ta));
+        setTimeout(() => autoResize(ta), 0);
+      });
+
       return card;
     }
 
@@ -138,7 +281,7 @@
           updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
         } else {
           clearInterval(countdownInterval);
-          updateBadge('processing', 'AI Extracting...', 'Parsing single or multiple events with Gemini');
+          updateBadge('processing', 'AI Extracting...', 'Parsing with Gemini');
 
           try {
             const res = await fetch('/parse', {
@@ -153,7 +296,7 @@
 
             const contentType = res.headers.get("content-type") || "";
             if (!contentType.includes("application/json")) {
-              updateBadge('', '', 'Session expired. Please refresh the page.');
+              updateBadge('', '', 'Session expired. Please refresh page.');
               return;
             }
 
@@ -164,11 +307,11 @@
                 cardsList.appendChild(createCardElement(item, idx));
               });
 
-              updateBadge('', '', `Parsed ${data.events.length} event(s). Review details below:`);
-              confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Events to Calendar` : 'Confirm & Add to Calendar';
+              updateBadge('', '', `Parsed ${data.events.length} event(s). Edit & confirm:`);
+              confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Events` : 'Confirm & Add to Calendar';
               editContainer.style.display = 'block';
             } else {
-              updateBadge('', '', data.error || 'Could not find any clear calendar events.');
+              updateBadge('', '', data.error || 'Could not detect any calendar events.');
             }
           } catch (err) {
             updateBadge('', '', 'Network error parsing text.');
@@ -194,7 +337,7 @@
         const description = card.querySelector('.input-desc').value.trim();
 
         if (!summary || !start_iso || !end_iso) {
-          alert('Please make sure Title, Start Time, and End Time are filled for all events.');
+          alert('Please fill out the Title, Start Time, and End Time for all events.');
           return;
         }
 
@@ -202,7 +345,7 @@
       }
 
       confirmBtn.disabled = true;
-      confirmBtn.innerText = 'Adding to Google Calendar...';
+      confirmBtn.innerText = 'Adding to Calendar...';
 
       try {
         const res = await fetch('/schedule', {
@@ -241,7 +384,7 @@
         alert('Request failed: ' + err.message);
       } finally {
         confirmBtn.disabled = false;
-        confirmBtn.innerText = 'Confirm & Add All to Calendar';
+        confirmBtn.innerText = 'Confirm & Add to Calendar';
       }
     });
   </script>

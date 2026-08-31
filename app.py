@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
@@ -114,21 +115,43 @@ def parse():
     If duration is unspecified, default to 1 hour.
     """
 
-    try:
-        response = gemini_client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=user_prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=EventListSchema,
-                temperature=0.1
-            )
-        )
-        parsed = json.loads(response.text)
-        return jsonify(parsed)
-    except Exception as e:
-        return jsonify({"error": f"AI Parsing failed: {str(e)}"}), 500
+    config = types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        response_mime_type="application/json",
+        response_schema=EventListSchema,
+        temperature=0.1
+    )
+
+    # List models to try in order if one experiences high demand
+    models_to_try = ['gemini-2.5-flash', 'gemini-2.5-pro']
+    parsed = None
+    last_error = None
+
+    for model_name in models_to_try:
+        for attempt in range(3):  # Retry up to 3 times per model
+            try:
+                response = gemini_client.models.generate_content(
+                    model=model_name,
+                    contents=user_prompt,
+                    config=config
+                )
+                parsed = json.loads(response.text)
+                break
+            except Exception as e:
+                last_error = e
+                err_str = str(e)
+                if '503' in err_str or '429' in err_str or 'UNAVAILABLE' in err_str:
+                    time.sleep(1.5 * (attempt + 1))  # Exponential backoff
+                    continue
+                else:
+                    break
+        if parsed:
+            break
+
+    if not parsed:
+        return jsonify({"error": f"AI Parsing failed due to temporary high server demand. Please wait a moment and try again. Details: {str(last_error)}"}), 503
+
+    return jsonify(parsed)
 
 @app.route('/schedule', methods=['POST'])
 def schedule():
