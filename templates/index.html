@@ -39,15 +39,16 @@
       word-wrap: break-word;
       line-height: 1.4;
     }
-    #promptInput:focus, input:focus, textarea:focus {
+    #promptInput:focus, input:focus, textarea:focus, select:focus {
       border-color: #2563eb;
       outline: none;
     }
 
-    /* Live Countdown / Typing Indicator Badge */
+    /* Live Countdown / Typing Indicator Badge & Error Status Row */
     .status-container {
       display: flex;
       align-items: center;
+      flex-wrap: wrap;
       gap: 8px;
       margin-top: 10px;
       min-height: 24px;
@@ -66,6 +67,30 @@
     .badge.processing { display: inline-flex; background: #ede9fe; color: #6d28d9; }
     .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
     .status-text { color: #64748b; font-size: 12px; }
+
+    /* Inline Retry Button */
+    .retry-btn {
+      display: none;
+      align-items: center;
+      gap: 4px;
+      background: #f1f5f9;
+      color: #475569;
+      border: 1px solid #cbd5e1;
+      border-radius: 6px;
+      padding: 3px 8px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      line-height: 1;
+      transition: all 0.15s ease;
+    }
+    .retry-btn:hover {
+      background: #e2e8f0;
+      color: #1e293b;
+    }
+    .retry-btn:active {
+      transform: scale(0.96);
+    }
 
     /* Mobile-Optimized Event Cards */
     #editContainer { display: none; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e2e8f0; }
@@ -106,7 +131,6 @@
       letter-spacing: 0.025em;
     }
 
-    /* Auto-wrapping multiline textareas for event titles & descriptions */
     .auto-grow-input {
       width: 100%;
       min-height: 44px;
@@ -123,7 +147,7 @@
       overflow: hidden;
     }
 
-    input[type="datetime-local"] {
+    select.input-type, input[type="datetime-local"] {
       width: 100%;
       min-height: 44px;
       padding: 8px 10px;
@@ -134,7 +158,6 @@
       color: #0f172a;
     }
 
-    /* Responsive Grid: Stacks on mobile, splits 50/50 on larger tablets */
     .grid-dates {
       display: grid;
       grid-template-columns: 1fr;
@@ -176,7 +199,7 @@
     <h2>Smart Calendar Scheduler</h2>
     <p class="subtitle">Type your plans naturally. Details will auto-extract below for quick edits before saving.</p>
     
-    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, study session with Alex on Friday 3 to 5:30"></textarea>
+    <textarea id="promptInput" placeholder="e.g., gym tomorrow from 12-2, dentist appointment at 3pm on Tuesday, buy groceries by 6pm"></textarea>
     
     <div class="status-container">
       <span id="indicatorBadge" class="badge">
@@ -184,6 +207,7 @@
         <span id="badgeText"></span>
       </span>
       <span id="statusText" class="status-text"></span>
+      <button type="button" id="retryBtn" class="retry-btn">↺ Retry</button>
     </div>
 
     <form id="editContainer">
@@ -205,17 +229,19 @@
     const indicatorBadge = document.getElementById('indicatorBadge');
     const badgeText = document.getElementById('badgeText');
     const statusText = document.getElementById('statusText');
+    const retryBtn = document.getElementById('retryBtn');
     const editContainer = document.getElementById('editContainer');
     const cardsList = document.getElementById('cardsList');
     const confirmBtn = document.getElementById('confirmBtn');
     const successCard = document.getElementById('successCard');
     const createdEventsList = document.getElementById('createdEventsList');
 
-    function updateBadge(state, text, message = '') {
+    function updateBadge(state, text, message = '', showRetry = false) {
       indicatorBadge.className = 'badge ' + state;
       indicatorBadge.style.display = state ? 'inline-flex' : 'none';
       badgeText.innerText = text;
       statusText.innerText = message;
+      retryBtn.style.display = showRetry ? 'inline-flex' : 'none';
     }
 
     function autoResize(textarea) {
@@ -226,15 +252,29 @@
     function createCardElement(item, index) {
       const card = document.createElement('div');
       card.className = 'event-item';
+      const type = item.entry_type || 'event';
+
       card.innerHTML = `
         <div class="event-header">
-          <span class="event-count">Event #${index + 1}</span>
+          <span class="event-count">Item #${index + 1}</span>
           <button type="button" class="remove-btn" onclick="this.closest('.event-item').remove()">Remove</button>
         </div>
-        <div class="field-group">
-          <label>Event Title</label>
-          <textarea class="auto-grow-input input-summary" rows="1" required>${item.summary || ''}</textarea>
+        
+        <div class="grid-dates" style="margin-bottom: 10px;">
+          <div class="field-group">
+            <label>Type</label>
+            <select class="input-type">
+              <option value="event" ${type === 'event' ? 'selected' : ''}>📅 Event</option>
+              <option value="appointment" ${type === 'appointment' ? 'selected' : ''}>📍 Appointment</option>
+              <option value="task" ${type === 'task' ? 'selected' : ''}>✅ Task</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label>Title</label>
+            <textarea class="auto-grow-input input-summary" rows="1" required>${item.summary || ''}</textarea>
+          </div>
         </div>
+
         <div class="grid-dates">
           <div class="field-group">
             <label>Start Time</label>
@@ -245,13 +285,13 @@
             <input type="datetime-local" class="input-end" value="${(item.end_iso || '').slice(0, 16)}" required />
           </div>
         </div>
-        <div class="field-group">
+
+        <div class="field-group" style="margin-top: 10px;">
           <label>Notes / Description</label>
           <textarea class="auto-grow-input input-desc" rows="1" placeholder="Optional details">${item.description || ''}</textarea>
         </div>
       `;
 
-      // Attach auto-expand behavior to multiline fields
       const textareas = card.querySelectorAll('.auto-grow-input');
       textareas.forEach(ta => {
         ta.addEventListener('input', () => autoResize(ta));
@@ -261,62 +301,74 @@
       return card;
     }
 
+    async function triggerParse(val) {
+      updateBadge('processing', 'AI Extracting...', 'Parsing with Gemini', false);
+
+      try {
+        const res = await fetch('/parse', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text: val,
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            clientNow: new Date().toISOString()
+          })
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        if (!contentType.includes("application/json")) {
+          updateBadge('', '', 'Session expired. Please refresh the page.', false);
+          return;
+        }
+
+        const data = await res.json();
+        if (res.ok && data.events && data.events.length > 0) {
+          cardsList.innerHTML = '';
+          data.events.forEach((item, idx) => {
+            cardsList.appendChild(createCardElement(item, idx));
+          });
+
+          updateBadge('', '', `Parsed ${data.events.length} item(s). Edit & confirm:`, false);
+          confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Items` : 'Confirm & Add to Calendar';
+          editContainer.style.display = 'block';
+        } else {
+          updateBadge('', '', data.error || 'Failed to extract items.', true);
+        }
+      } catch (err) {
+        updateBadge('', '', 'Connection failed.', true);
+      }
+    }
+
+    // Manual retry click handler
+    retryBtn.addEventListener('click', () => {
+      const val = promptInput.value.trim();
+      if (val) {
+        triggerParse(val);
+      }
+    });
+
     promptInput.addEventListener('input', () => {
       clearInterval(countdownInterval);
       successCard.style.display = 'none';
 
       const val = promptInput.value.trim();
       if (!val) {
-        updateBadge('', '', '');
+        updateBadge('', '', '', false);
         editContainer.style.display = 'none';
         cardsList.innerHTML = '';
         return;
       }
 
       secondsLeft = 3;
-      updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
+      updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract', false);
 
       countdownInterval = setInterval(async () => {
         secondsLeft--;
         if (secondsLeft > 0) {
-          updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract');
+          updateBadge('countdown', `Processing in ${secondsLeft}s`, 'Keep typing or pause to extract', false);
         } else {
           clearInterval(countdownInterval);
-          updateBadge('processing', 'AI Extracting...', 'Parsing with Gemini');
-
-          try {
-            const res = await fetch('/parse', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                text: val,
-                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-                clientNow: new Date().toISOString()
-              })
-            });
-
-            const contentType = res.headers.get("content-type") || "";
-            if (!contentType.includes("application/json")) {
-              updateBadge('', '', 'Session expired. Please refresh page.');
-              return;
-            }
-
-            const data = await res.json();
-            if (res.ok && data.events && data.events.length > 0) {
-              cardsList.innerHTML = '';
-              data.events.forEach((item, idx) => {
-                cardsList.appendChild(createCardElement(item, idx));
-              });
-
-              updateBadge('', '', `Parsed ${data.events.length} event(s). Edit & confirm:`);
-              confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Events` : 'Confirm & Add to Calendar';
-              editContainer.style.display = 'block';
-            } else {
-              updateBadge('', '', data.error || 'Could not detect any calendar events.');
-            }
-          } catch (err) {
-            updateBadge('', '', 'Network error parsing text.');
-          }
+          triggerParse(val);
         }
       }, 1000);
     });
@@ -333,16 +385,17 @@
       const eventsToSubmit = [];
       for (const card of cards) {
         const summary = card.querySelector('.input-summary').value.trim();
+        const entry_type = card.querySelector('.input-type').value;
         const start_iso = card.querySelector('.input-start').value;
         const end_iso = card.querySelector('.input-end').value;
         const description = card.querySelector('.input-desc').value.trim();
 
         if (!summary || !start_iso || !end_iso) {
-          alert('Please fill out the Title, Start Time, and End Time for all events.');
+          alert('Please fill out the Title, Start Time, and End Time for all items.');
           return;
         }
 
-        eventsToSubmit.push({ summary, start_iso, end_iso, description });
+        eventsToSubmit.push({ summary, entry_type, start_iso, end_iso, description });
       }
 
       confirmBtn.disabled = true;
@@ -377,7 +430,7 @@
           promptInput.value = '';
           cardsList.innerHTML = '';
           editContainer.style.display = 'none';
-          updateBadge('', '', '');
+          updateBadge('', '', '', false);
         } else {
           alert(data.error || 'Could not save events.');
         }
