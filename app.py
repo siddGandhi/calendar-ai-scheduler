@@ -122,13 +122,13 @@ def parse():
         temperature=0.1
     )
 
-    # List models to try in order if one experiences high demand
-    models_to_try = ['gemini-2.5-flash', 'gemini-2.5-pro']
+   # Update the models to the current active generation
+    models_to_try = ['gemini-3.6-flash', 'gemini-3.1-pro-preview']
     parsed = None
     last_error = None
 
     for model_name in models_to_try:
-        for attempt in range(3):  # Retry up to 3 times per model
+        for attempt in range(3):  # Retry up to 3 times per model on 503/429
             try:
                 response = gemini_client.models.generate_content(
                     model=model_name,
@@ -149,7 +149,7 @@ def parse():
             break
 
     if not parsed:
-        return jsonify({"error": f"AI Parsing failed due to temporary high server demand. Please wait a moment and try again. Details: {str(last_error)}"}), 503
+        return jsonify({"error": f"AI Parsing failed. Please wait a moment and try again. Details: {str(last_error)}"}), 503
 
     return jsonify(parsed)
 
