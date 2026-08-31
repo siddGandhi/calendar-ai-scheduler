@@ -16,7 +16,7 @@ load_dotenv()
 
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-app.secret_key = os.environ.get("FLASK_SECRET_KEY", os.urandom(24))
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "calendar-secret-key-prod-12345")
 
 gemini_client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
 
@@ -33,8 +33,8 @@ def get_oauth_config():
 class SingleEvent(BaseModel):
     summary: str
     description: str
-    start_iso: str  # Format: YYYY-MM-DDTHH:MM
-    end_iso: str    # Format: YYYY-MM-DDTHH:MM
+    start_iso: str
+    end_iso: str
 
 class EventListSchema(BaseModel):
     events: List[SingleEvent]
@@ -55,8 +55,10 @@ def login():
         scopes=SCOPES,
         redirect_uri=redirect_uri
     )
+    # prompt='consent' forces Google to issue a refresh_token every time
     authorization_url, state = flow.authorization_url(
         access_type='offline',
+        prompt='consent',
         include_granted_scopes='true'
     )
     session['state'] = state
@@ -109,7 +111,7 @@ def parse():
     User Local Timezone: {user_tz}
     Extract ONE OR MULTIPLE calendar events from the user's input.
     Format ISO strings strictly as 'YYYY-MM-DDTHH:MM' in user's local timezone.
-    If duration is unspecified for an item, default to 1 hour.
+    If duration is unspecified, default to 1 hour.
     """
 
     try:
@@ -140,7 +142,16 @@ def schedule():
     if not events:
         return jsonify({"error": "No events provided"}), 400
 
-    creds = Credentials(**session['credentials'])
+    creds_dict = session['credentials']
+    creds = Credentials(
+        token=creds_dict.get('token'),
+        refresh_token=creds_dict.get('refresh_token'),
+        token_uri=creds_dict.get('token_uri', 'https://oauth2.googleapis.com/token'),
+        client_id=creds_dict.get('client_id'),
+        client_secret=creds_dict.get('client_secret'),
+        scopes=creds_dict.get('scopes')
+    )
+
     service = build('calendar', 'v3', credentials=creds)
 
     created_links = []
