@@ -236,6 +236,14 @@
     const successCard = document.getElementById('successCard');
     const createdEventsList = document.getElementById('createdEventsList');
 
+    document.addEventListener('DOMContentLoaded', () => {
+      // Fire background warmup immediately when the site opens
+      fetch('/warmup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      }).catch(() => {});
+    });
+
     function updateBadge(state, text, message = '', showRetry = false) {
       indicatorBadge.className = 'badge ' + state;
       indicatorBadge.style.display = state ? 'inline-flex' : 'none';
@@ -322,13 +330,22 @@
         }
 
         const data = await res.json();
+
+        // Log pure model generation time to the Chrome Console
+        if (data.debug_llm_time_sec !== undefined) {
+          console.log(
+            `%c⚡ Gemini Generation: ${data.debug_llm_time_sec}s [${data.debug_model_used}]`,
+            'color: #2563eb; font-weight: bold; font-size: 13px;'
+          );
+        }
+
         if (res.ok && data.events && data.events.length > 0) {
           cardsList.innerHTML = '';
           data.events.forEach((item, idx) => {
             cardsList.appendChild(createCardElement(item, idx));
           });
 
-          updateBadge('', '', `Parsed ${data.events.length} item(s). Edit & confirm:`, false);
+          updateBadge('', '', `Parsed ${data.events.length} item(s) (${data.debug_llm_time_sec}s). Edit & confirm:`, false);
           confirmBtn.innerText = data.events.length > 1 ? `Confirm & Add ${data.events.length} Items` : 'Confirm & Add to Calendar';
           editContainer.style.display = 'block';
         } else {

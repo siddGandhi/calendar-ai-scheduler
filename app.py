@@ -101,6 +101,13 @@ def oauth2callback():
     }
     return redirect(url_for('index'))
 
+@app.route('/warmup', methods=['POST'])
+def warmup():
+    if 'credentials' not in session:
+        return jsonify({"status": "unauthenticated"}), 200
+    
+    return jsonify({"status": "ready"}), 200
+
 @app.route('/parse', methods=['POST'])
 def parse():
     if 'credentials' not in session:
@@ -114,54 +121,51 @@ def parse():
     if not user_prompt:
         return jsonify({"error": "Empty prompt"}), 400
 
-    system_instruction = f"""
-    You are an intelligent calendar assistant.
-    Current Reference Timestamp: {current_time}
-    User Local Timezone: {user_tz}
-
-    Extract ONE OR MULTIPLE calendar items and classify each into an 'entry_type':
-    - 'event': General activities or time-blocked sessions (e.g., "gym 12-2", "study session 4-6", "beach cleanup").
-    - 'appointment': Specific meetings, consultations, doctor/dentist visits, or commitments involving people or specific locations (e.g., "dentist at 3pm", "meeting with advisor", "interview at 10am").
-    - 'task': Actionable to-do items, chores, or deadlines (e.g., "submit homework by 5pm", "buy groceries", "finish lab report"). Default duration to 30 minutes.
-
-    Format ISO strings strictly as 'YYYY-MM-DDTHH:MM' in the user's local timezone.
-    If no duration is specified for events/appointments, default to 1 hour.
-    """
+    system_instruction = (
+        f"Reference: {current_time} ({user_tz}). "
+        "Extract calendar items to JSON: "
+        "- entry_type: 'event' (general activity), 'appointment' (meetings, consultations, person/place), 'task' (deadline/todo, default 30m). "
+        "- start_iso & end_iso: format strictly as 'YYYY-MM-DDTHH:MM'. If no duration is given, default to 1 hour."
+    )
 
     config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         response_mime_type="application/json",
         response_schema=EventListSchema,
-        temperature=0.1
+        temperature=0.0,
+        thinking_config=types.ThinkingConfig(thinking_budget=0)
     )
 
     models_to_try = ['gemini-3.6-flash', 'gemini-3.1-pro-preview']
     parsed = None
     last_error = None
+    used_model = None
+
+    # Start timing right before sending the prompt to Gemini
+    t0 = time.perf_counter()
 
     for model_name in models_to_try:
-        for attempt in range(3):
-            try:
-                response = gemini_client.models.generate_content(
-                    model=model_name,
-                    contents=user_prompt,
-                    config=config
-                )
-                parsed = json.loads(response.text)
-                break
-            except Exception as e:
-                last_error = e
-                err_str = str(e)
-                if '503' in err_str or '429' in err_str or 'UNAVAILABLE' in err_str:
-                    time.sleep(1.5 * (attempt + 1))
-                    continue
-                else:
-                    break
-        if parsed:
+        try:
+            response = gemini_client.models.generate_content(
+                model=model_name,
+                contents=user_prompt,
+                config=config
+            )
+            parsed = json.loads(response.text)
+            used_model = model_name
             break
+        except Exception as e:
+            last_error = e
+            continue
+
+    llm_duration = round(time.perf_counter() - t0, 3)
 
     if not parsed:
         return jsonify({"error": f"AI Parsing failed. Details: {str(last_error)}"}), 503
+
+    # Attach pure model timing metrics to the returned payload
+    parsed['debug_llm_time_sec'] = llm_duration
+    parsed['debug_model_used'] = used_model
 
     return jsonify(parsed)
 
