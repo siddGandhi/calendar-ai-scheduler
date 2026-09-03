@@ -136,7 +136,7 @@ def parse():
         thinking_config=types.ThinkingConfig(thinking_budget=0)
     )
 
-    models_to_try = ['gemini-3.6-flash', 'gemini-3.1-pro-preview']
+    models_to_try = ['Gemini 2.5 Flash-Lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']
     parsed = None
     last_error = None
     used_model = None
