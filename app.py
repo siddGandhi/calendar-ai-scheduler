@@ -136,36 +136,27 @@ def parse():
         thinking_config=types.ThinkingConfig(thinking_budget=0)
     )
 
-    models_to_try = ['Gemini 2.5 Flash-Lite', 'gemini-3.5-flash-lite', 'gemini-3.8-flash']
-    parsed = None
-    last_error = None
-    used_model = None
-
-    # Start timing right before sending the prompt to Gemini
     t0 = time.perf_counter()
+    model_name = 'gemini-2.5-flash'
 
-    for model_name in models_to_try:
-        try:
-            response = gemini_client.models.generate_content(
-                model=model_name,
-                contents=user_prompt,
-                config=config
-            )
-            parsed = json.loads(response.text)
-            used_model = model_name
-            break
-        except Exception as e:
-            last_error = e
-            continue
+    # Single attempt only: no retry loops or automatic fallbacks
+    try:
+        response = gemini_client.models.generate_content(
+            model=model_name,
+            contents=user_prompt,
+            config=config
+        )
+        parsed = json.loads(response.text)
+    except Exception as e:
+        err_str = str(e)
+        # Return a cleaner message if rate limited
+        if '429' in err_str or 'RESOURCE_EXHAUSTED' in err_str:
+            return jsonify({"error": "Rate limit reached. Please wait a few seconds and tap Retry."}), 429
+        return jsonify({"error": f"AI Parsing failed: {err_str}"}), 500
 
     llm_duration = round(time.perf_counter() - t0, 3)
-
-    if not parsed:
-        return jsonify({"error": f"AI Parsing failed. Details: {str(last_error)}"}), 503
-
-    # Attach pure model timing metrics to the returned payload
     parsed['debug_llm_time_sec'] = llm_duration
-    parsed['debug_model_used'] = used_model
+    parsed['debug_model_used'] = model_name
 
     return jsonify(parsed)
 
