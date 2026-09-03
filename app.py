@@ -91,6 +91,11 @@ def oauth2callback():
         code_verifier=session.get('code_verifier')
     )
     creds = flow.credentials
+
+    installed_or_web = client_config.get('web') or client_config.get('installed') or {}
+    client_id = creds.client_id or installed_or_web.get('client_id')
+    client_secret = creds.client_secret or installed_or_web.get('client_secret')
+
     session['credentials'] = {
         'token': creds.token,
         'refresh_token': creds.refresh_token,
