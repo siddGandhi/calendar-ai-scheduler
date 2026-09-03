@@ -137,7 +137,7 @@ def parse():
     )
 
     t0 = time.perf_counter()
-    model_name = 'gemini-2.5-flash'
+    model_name = 'gemini-3.5-flash'
 
     # Single attempt only: no retry loops or automatic fallbacks
     try:
