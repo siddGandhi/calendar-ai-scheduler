@@ -204,7 +204,7 @@ def schedule():
         # Color IDs: 11 = Flamingo (Red/Pink for appointments), 5 = Banana (Yellow for tasks)
         color_id = None
         if entry_type == 'task':
-            final_summary = f"[ ] {summary}"
+            final_summary = f" {summary}"
             color_id = "5"
         elif entry_type == 'appointment':
             final_summary = f"📍 {summary}"
